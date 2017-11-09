@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
 #include "json.hpp"
+#include "utils.h"
 
 // for convenience
 using json = nlohmann::json;
@@ -98,8 +99,31 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+          //waypoints in map coords
+          int nWayPts = ptsx.size();
+          Eigen::MatrixXd map_pts(3, nWayPts);
+          for (int i=0; i<nWayPts; i++) {
+            map_pts(0,i) = ptsx[i];
+            map_pts(1,i) = ptsy[i];
+            map_pts(2,i) = 1;
+          }
+
+          //convert waypoints to car coords
+          Eigen::MatrixXd mat = mapToCar(px, py, psi);
+          Eigen::MatrixXd car_pts = mat * map_pts;
+
+          //fit a 3rd degree polynomial to the waypoints
+          Eigen::VectorXd coeffs = polyfit(car_pts.row(0), car_pts.row(1), 3);
+          Eigen::VectorXd dcoeffs = derivative(coeffs);
+
+          //make the state vector
+          Eigen::VectorXd state(6);
+          state << 0, 0, 0, v, polyeval(coeffs,0), -atan(polyeval(dcoeffs,0));
+
+          //solve for actuations
+          //vector<double> actuations = mpc.Solve(state, coeffs);
+          double steer_value = 0;
+          double throttle_value = .1;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -107,7 +131,7 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
@@ -120,6 +144,10 @@ int main() {
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+          for (int i=0; i<nWayPts; i++) {
+            next_x_vals.push_back(car_pts(0,i));
+            next_y_vals.push_back(car_pts(1,i));
+          }
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
