@@ -121,9 +121,9 @@ int main() {
           state << 0, 0, 0, v, polyeval(coeffs,0), -atan(polyeval(dcoeffs,0));
 
           //solve for actuations
-          //vector<double> actuations = mpc.Solve(state, coeffs);
-          double steer_value = 0;
-          double throttle_value = .1;
+          vector<double> actuations = mpc.Solve(state, coeffs);
+          double steer_value = actuations[0];
+          double throttle_value = actuations[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
