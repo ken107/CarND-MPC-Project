@@ -30,7 +30,7 @@ _utils.cpp_:
 
 I began by modifying the code from the MPC quiz to use 3rd degree polynomial.  Then testing with
 various waypoints, I visualized the solutions returned by the optimizer to verify that they merge
-correctly with the reference trajectories, and that actuator variables change smoothly over time.
+correctly with the reference trajectories, and actuator variables change smoothly over time.
 
 In the following 3 figures, I show plots of the solution trajectories and reference trajectories
 in the first cell, and the time curves for state and actuator variables in the other cells.
@@ -48,8 +48,8 @@ in the first cell, and the time curves for state and actuator variables in the o
 ![curve left](img/figure_1.png)
 
 During this step, I also tuned the weights of the various components of the cost function. Once I
-was happy with the parameter settings, I moved the code into the project.  The rest of the work
-involved coordinate transformation, polynomial fitting, setting up initial state, and handling latency.
+was happy with the parameter settings, I moved the code into the project.  The remaining work
+involved coordinate transformation, polynomial fitting, setting up the initial state, and handling latency.
 
 ### Model Description
 
@@ -67,21 +67,21 @@ Update equations are as follows, after time step `dt`:
 - epsi1 = (psi0 - psides0) + (v0 * delta0 / Lf * dt)
 
 Where `Lf` is a calibration parameter, obtained by driving the car in the simulator in a circle on flat
-terrain at constant speed and steering angle, and choosing a value that result in the matching radii
-between the simulator and the model.
+terrain at constant speed and steering angle, and choosing a value that results in matching radii between
+the simulator and the model.
 
 `f0` is the y value of the reference trajectory at x0, and `psides0` is the desired orientation at x0.
 This desired orientation is the slope of the tangent to the reference trajectory at x0, calculated as f'(x0).
 
 ### Contraints and Cost Function
 
-The motion model is implemented as a series of constraints on the values of state/actuator variables between
-consecutive timesteps (MPC.cpp line 64-101).  The optimizer Ipopt chooses actuator values for each timestep
-that satisfy the model constraints while minimizing the cost function.
+The motion model is implemented as a series of constraints on the values of state and actuator variables
+between consecutive timesteps (MPC.cpp line 64-101).  The optimizer Ipopt chooses actuator values for each
+timestep that satisfy the model constraints while minimizing the cost function.
 
-The cost function (MPC.cpp line 45-49) primary purpose is to align the model-predicted trajectory and the
-reference trajectory.  Therefore its primary components are the `cte` and `epsi`.  Since `epsi` values are
-in radians and are small, I multiply it by 100 to give it more weight compared to the `cte`.
+The cost function's primary purpose is to align the model-predicted trajectory and the reference trajectory.
+Therefore its primary components are the `cte` and `epsi`.  Since `epsi` values are in radians and are small,
+I multiply it by 100 to give it more weight compared to the `cte` (MPC.cpp line 45-49).
 
 Secondary purpose of the cost function is to "discourage" sharp turning and sharp acceleration.  So we
 include `delta` and `a` in the cost (MPC.cpp line 52-55).
@@ -91,9 +91,9 @@ do this by including the first derivatives of `delta` and `a` in the cost also (
 
 ### Timestep Length & Horizon
 
-When tuning these parameters, I find that with a large time horizon (e.g. +3 seconds) we end up
-trying to polyfit many waypoints that may cover multiple curves on the road, and end up with bad polynomial
-that totally screws up the solver.  In the end, the rule seems to be to keep `N*dt` within 1.5 seconds.
+When tuning these parameters, I find that with a large time horizon (e.g. +3 seconds) we would be trying to
+polyfit many waypoints that may cover multiple curves on the road, and end up with a bad polynomial that totally
+screws up the solver.  In the end, the rule seems to be to keep `N*dt` within 1.5 seconds.
 
 How big `N` and how small `dt` is a matter of resolution, a trade-off between performance and roughness of
 the result trajectory.  A large `dt` appears to cause corner-cutting at sharp curves.  A small `dt` may
@@ -102,13 +102,13 @@ nonetheless works well.
 
 ### Polynomial Fitting
 
-The polynomial fitting (main.cpp line 122) is performed in the car's coordinate system.  So before fitting,
-the waypoints provided by the simulator in map coordinates need to be transformed to into car coordinates
-(main.cpp line 118).  This is a standard linear transformation involving a reverse translation of the car
-position followed by a reverse rotation of its orientation.
+Polynomial fitting is performed in the car's coordinate system.  So before fitting, the waypoints provided by
+the simulator (in map coordinates) needed to be transformed to into car coordinates (main.cpp line 118).
+This is a standard linear transformation involving a reverse translation by the car's position followed by a
+reverse rotation by its orientation.
 
-The vehicle state returned by the simulator is unprocessed, except for the steering angle, which is reversed
-and multiplied by the actual _max_steering_angle_ of the car (main.cpp line 99).  The opposite happens when
+The vehicle state returned by the simulator is not processed, except for the steering angle, which is reversed
+and then multiplied by the actual _max_steering_angle_ of the car (main.cpp line 99).  The opposite happens when
 we need to send steering actuations to the simulator (main.cpp line 155).
 
 ### Dealing With Latency
