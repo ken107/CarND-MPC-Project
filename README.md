@@ -1,23 +1,141 @@
 # CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+Self-Driving Car Engineer Nanodegree Program - Project Write-Up
 
 ---
+
+## Code Structure
+
+_main.cpp_:
+  * Line 118: transforming waypoints from global to car coordinates
+  * Line 122: fitting a 3rd degree polynomial to the way points
+  * Line 137: setting the initial state to account for the 100ms Latency
+  * Line 147: invoking the solver to find optimal trajectory
+  * Line 155: normalizing & reversing the steering angle
+
+_MPC.cpp_:
+  * Line 9: hyperparameter settings
+  * Line 45-61: FG_eval cost function
+  * Line 64-101: FG_eval constraints representing the vehicle model
+  * Line 129: prepare initial values and bounds of state, actuator variables, and constraints
+  * Line 202: invoke Ipopt to find the minimum-cost trajectory
+  * Line 211: output the trajectory for visualization
+
+_utils.cpp_:
+  * Line 3: helper function to convert global coords to car coords
+  * Line 23: function to compute the coeffs of the derivative of a polynomial
+
+## Details
+
+### How I approached the project
+
+I began by modifying the code from the MPC quiz to use 3rd degree polynomial.  Then testing with
+various waypoints, I visualized the solutions returned by the optimizer to verify that they merge
+correctly with the reference trajectories, and that actuator variables change smoothly over time.
+
+In the following 3 figures, I show plots of the solution trajectories and reference trajectories
+in the first cell, and the time curves for state and actuator variables in the other cells.
+
+**Straight trajectory**
+
+![straight](img/figure_3.png)
+
+**Curve right**
+
+![curve right](img/figure_2.png)
+
+**Curve left**
+
+![curve left](img/figure_1.png)
+
+During this step, I also tuned the weights of the various components of the cost function. Once I
+was happy with the parameter settings, I moved the code into the project.  The rest of the work
+involved coordinate transformation, polynomial fitting, setting up initial state, and handling latency.
+
+### Model Description
+
+The vehicle model is a bicycle model, its state consists of 4 variables: `x`, `y`, heading `psi`, and
+speed `v`.  We augment the state to include the cross-track error `cte` (distance from reference trajectory),
+and orientation error `epsi` (actual heading vs desired heading).  There are two actuator variables:
+steering angle `delta` and acceleration `a`.
+
+Update equations are as follows, after time step `dt`:
+- x1 = x0 + (v0 * cos(psi0) * dt)
+- y1 = y0 + (v0 * sin(psi0) * dt)
+- psi1 = psi0 + (v0 * delta0 / Lf * dt)
+- v1 = v0 + (a0 * dt)
+- cte1 = (f0 - y0) + (v0 * sin(epsi0) * dt)
+- epsi1 = (psi0 - psides0) + (v0 * delta0 / Lf * dt)
+
+Where `Lf` is a calibration parameter, obtained by driving the car in the simulator in a circle on flat
+terrain at constant speed and steering angle, and choosing a value that result in the matching radii
+between the simulator and the model.
+
+`f0` is the y value of the reference trajectory at x0, and `psides0` is the desired orientation at x0.
+This desired orientation is the slope of the tangent to the reference trajectory at x0, calculated as f'(x0).
+
+### Contraints and Cost Function
+
+The motion model is implemented as a series of constraints on the values of state/actuator variables between
+consecutive timesteps (MPC.cpp line 64-101).  The optimizer Ipopt chooses actuator values for each timestep
+that satisfy the model constraints while minimizing the cost function.
+
+The cost function (MPC.cpp line 45-49) primary purpose is to align the model-predicted trajectory and the
+reference trajectory.  Therefore its primary components are the `cte` and `epsi`.  Since `epsi` values are
+in radians and are small, I multiply it by 100 to give it more weight compared to the `cte`.
+
+Secondary purpose of the cost function is to "discourage" sharp turning and sharp acceleration.  So we
+include `delta` and `a` in the cost (MPC.cpp line 52-55).
+
+Finally we also want to smooth out the steering and acceleration curves by discouraging abrupt changes.  We
+do this by including the first derivatives of `delta` and `a` in the cost also (MPC.cpp line 58-61).
+
+### Timestep Length & Horizon
+
+When tuning these parameters, I find that with a large time horizon (e.g. +3 seconds) we end up
+trying to polyfit many waypoints that may cover multiple curves on the road, and end up with bad polynomial
+that totally screws up the solver.  In the end, the rule seems to be to keep `N*dt` within 1.5 seconds.
+
+How big `N` and how small `dt` is a matter of resolution, a trade-off between performance and roughness of
+the result trajectory.  A large `dt` appears to cause corner-cutting at sharp curves.  A small `dt` may
+causes higher CPU.  In the end, I choose `dt=.1` and `N=10`, which seems to be on the rough side, but
+nonetheless works well.
+
+### Polynomial Fitting
+
+The polynomial fitting (main.cpp line 122) is performed in the car's coordinate system.  So before fitting,
+the waypoints provided by the simulator in map coordinates need to be transformed to into car coordinates
+(main.cpp line 118).  This is a standard linear transformation involving a reverse translation of the car
+position followed by a reverse rotation of its orientation.
+
+The vehicle state returned by the simulator is unprocessed, except for the steering angle, which is reversed
+and multiplied by the actual _max_steering_angle_ of the car (main.cpp line 99).  The opposite happens when
+we need to send steering actuations to the simulator (main.cpp line 155).
+
+### Dealing With Latency
+
+As suggested in lecture, to handle the 100ms latency, I use the model to predict where the car will be after
+100ms and use that as the initial state to the solver (main.cpp line 137).  This is so that the solution
+returned by the solver matches the time the actuation actually takes effect on the car.
+
+### Video Demo
+
+[![demo](https://img.youtube.com/vi/Qavvjt_IQ7w/0.jpg)](https://www.youtube.com/watch?v=Qavvjt_IQ7w)
 
 ## Dependencies
 
 * cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
+    * All OSes: [click here for installation instructions](https://cmake.org/install/)
 * make >= 4.1(mac, linux), 3.81(Windows)
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
+    * Linux: make is installed by default on most Linux distros
+    * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
+    * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
 * gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
+    * Linux: gcc / g++ is installed by default on most Linux distros
+    * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
+    * Windows: recommend using [MinGW](http://www.mingw.org/)
 * [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
+    * Run either `install-mac.sh` or `install-ubuntu.sh`.
+    * If you install from source, checkout to commit `e94b6e1`, i.e.
     ```
     git clone https://github.com/uWebSockets/uWebSockets
     cd uWebSockets
@@ -37,72 +155,3 @@ Self-Driving Car Engineer Nanodegree Program
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
-
-## Tips
-
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
