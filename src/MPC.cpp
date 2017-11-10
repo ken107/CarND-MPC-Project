@@ -20,7 +20,7 @@ double dt = 0.1;
 //
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-const double ref_v = 40;
+const double ref_v = 60;
 
 int x_start = 0;
 int y_start = x_start + N;
@@ -106,10 +106,10 @@ class FG_eval {
 //
 // MPC class definition implementation.
 //
-MPC::MPC() {}
+MPC::MPC(double max_delta) : max_delta(max_delta) {}
 MPC::~MPC() {}
 
-vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
+vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, vector<double>& mpc_x_vals, vector<double>& mpc_y_vals) {
   typedef CPPAD_TESTVECTOR(double) Dvector;
 
   // Set the number of model variables (includes both states and inputs).
@@ -145,8 +145,8 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     vars_upperbound[i] = 1.0e19;
   }
   for (int i = delta_start; i < a_start; i++) {
-    vars_lowerbound[i] = -0.436332;
-    vars_upperbound[i] = 0.436332;
+    vars_lowerbound[i] = -max_delta;
+    vars_upperbound[i] = max_delta;
   }
   for (int i = a_start; i < n_vars; i++) {
     vars_lowerbound[i] = -1.0;
@@ -207,13 +207,21 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   if (solution.status != CppAD::ipopt::solve_result<Dvector>::success)
     throw std::runtime_error("Failed to find a solution!");
 
+  // output the trajectory
+  mpc_x_vals.clear();
+  mpc_y_vals.clear();
+  for (int i=0; i<N; i++) {
+    mpc_x_vals.push_back(solution.x[x_start+i]);
+    mpc_y_vals.push_back(solution.x[y_start+i]);
+  }
+
   // Cost
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
 
-  // Return the first actuator values, normalize delta
+  // Return the first actuator values
   return {
-    solution.x[delta_start] /0.436332,
+    solution.x[delta_start],
     solution.x[a_start]
   };
 }

@@ -69,16 +69,20 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
 int main() {
   uWS::Hub h;
 
-  // MPC is initialized here!
-  MPC mpc;
+  // apparently the simulator's max steering angle is bigger than 25 degrees
+  // this was causing "eager" steering, so I decided to tune this parameter
+  double max_steering_angle = deg2rad(40);
 
-  h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  // MPC is initialized here!
+  MPC mpc(max_steering_angle);
+
+  h.onMessage([&mpc, &max_steering_angle](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
     string sdata = string(data).substr(0, length);
-    cout << sdata << endl;
+    //cout << sdata << endl;
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
       string s = hasData(sdata);
       if (s != "") {
@@ -92,6 +96,8 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double delta = -(double)j[1]["steering_angle"]*max_steering_angle;
+          double a = j[1]["throttle"];
 
           /*
           * TODO: Calculate steering angle and throttle using MPC.
@@ -116,24 +122,38 @@ int main() {
           Eigen::VectorXd coeffs = polyfit(car_pts.row(0), car_pts.row(1), 3);
           Eigen::VectorXd dcoeffs = derivative(coeffs);
 
+          //account for 100ms latency
+          double x0 = 0;
+          double y0 = 0;
+          double psi0 = 0;
+          double v0 = v;
+          double delta0 = delta;
+          double a0 = a;
+          double f0 = polyeval(coeffs, x0);
+          double psides0 = atan(polyeval(dcoeffs, x0));
+          double t0 = 0.1;
+
           //make the state vector
           Eigen::VectorXd state(6);
-          state << 0, 0, 0, v, polyeval(coeffs,0), -atan(polyeval(dcoeffs,0));
+          state <<
+            x0 + v0 * cos(psi0) * t0,
+            y0 + v0 * sin(psi0) * t0,
+            psi0 + v0 / Lf * delta0 * t0,
+            v0 + a0 * t0,
+            ((f0 - y0) + (v0 * sin(psi0 - psides0) * t0)),
+            ((psi0 - psides0) + v0 * delta0 / Lf * t0);
 
           //solve for actuations
-          vector<double> actuations = mpc.Solve(state, coeffs);
+          vector<double> mpc_x_vals, mpc_y_vals;
+          vector<double> actuations = mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals);
           double steer_value = actuations[0];
           double throttle_value = actuations[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = steer_value;
+          msgJson["steering_angle"] = -steer_value/max_steering_angle;
           msgJson["throttle"] = throttle_value;
-
-          //Display the MPC predicted trajectory
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
@@ -157,7 +177,7 @@ int main() {
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
